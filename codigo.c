@@ -40,16 +40,22 @@ NOTA: Por claridad y consistencia se ha numerado cada grupo a partir de cierto v
 
 
 //Errores (A partir del 201)
+
 //Password no valido
 #define ERR_Badpass 	201
+
 //No se encuentra USB
 #define	ERR_USBNotFound	202
+
 //El formato del USB no es reconocido por el VINCULUM
 #define	ERR_USBFormat	203
+
 //Error indefinido, relacionado con el stage Browser
 #define ERR_USB			204
+
 //Error de sintaxis en archivo EXCELLON
 #define	ERR_BadFile		205
+
 //Error debido a mala ubicacion de la baquelita
 #define	ERR_BadPosition	206
 
@@ -72,7 +78,10 @@ typedef struct{
 	unsigned char next_state;
 }NEXT_STATE;
 
+
+//State Transition Table
 NEXT_STATE stateMapping[] = {
+
 //current_state		//signal			//next_state
 {ST_Idle,			SIG_GoodPass,		ST_WaitUSB},
 {ST_Idle,			ERR_BadPass,		ERROR},
@@ -104,27 +113,28 @@ Aca se crea el arreglo con cada estado y su funcion correspondiente
 
 Una vez se hallan creado las funciones asociadas a cada estado descomentar
 esta seccion y agregar la funcion para cada caso
-===========================================================================
+===========================================================================*/
 STATE stateFunctions[] = {
 //current_state		//function
-{ST_Idle,		Bienvenido()},
-{ST_ReadPass,		FALTA},
-{ST_WaitUSB,		FALTA},
-{ST_ReadUSB,		FALTA},
-{ST_Browser,		FALTA},
-{ST_Confirm,		FALTA},
-{ST_Processing,		FALTA},
-{ST_JobRdy,		FALTA},
-{ST_Error,		FALTA}
+{ST_Idle,			Bienvenido()},
+{ST_WaitUSB,		IngresaUSB()},
+{ST_ReadUSB,		USBLeido()},
+{ST_Browser,		Explorador()},
+{ST_Confirm,		Confirmar()},
+{ST_Processing,		Taladrando()},
+{ST_JobRdy,			Listo()},
+{ST_Error,			ErrorHandler()}
 };
-*/
+
 
 void main(void){
+	//Variable que maneja el estado
+	unsigned char state=ST_IDLE;
 	//Variables que mantendran las senales y entradas recibidas
 	unsigned char inputKey;
 	unsigned char signal;
 	unsigned char error;
-
+	
 	
 	while(1){
 		signal=getSignals();
@@ -132,4 +142,19 @@ void main(void){
 			inputKey=getKey();
 		}
 	}
+}
+
+
+//Funcion que devuelve el siguiente estado
+unsigned char nextstate_query(unsigned char *state, unsigned char *signal, NEXT_STATE *ns){
+	
+	NEXT_STATE *low=&ns[0];
+	NEXT_STATE *high=&ns[sizeof stateMapping];
+
+	while (low<high){
+		if ((strcmp(*state,low->current_state)&&(strcmp(*state,low->signal)))
+			return low->next_state;
+		else low++; 
+	}
+	return ERROR //En caso no exista el cambio de estado, se va al estado error
 }
