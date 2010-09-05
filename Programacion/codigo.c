@@ -58,22 +58,29 @@
 //RECORDAR ERROR PARADA DE EMERGENCIA
 
 
-/////////////////////////////
-//Variables
-////////////////////////////
+/////////////
+//*********//
+//Variables//
+//*********//
+/////////////
 unsigned char signal;
-unsigned char curr_step=STEP_ONE;
-
+unsigned char curr_step=STEP_ONE; //Variable que almacena el paso
+								  //anterior del motor
 /////////////
-//Funciones
+//*********//
+//Funciones//
+//*********//
 /////////////
+unsigned char nextstep_query(unsigned char c_step);
 void send_usart(char mensaje_idle[]);
-void stepper_move(unsigned char *);
+void stepper_move(unsigned char []);
 void init(unsigned int);
 unsigned char nextstate_query(unsigned char cur_st,unsigned char signal);
 
 ///////////////
+//***********//
 //ESTRUCTURAS//
+//***********//
 ///////////////
 //Estructura de funcion de estado
 typedef struct PROGMEM{
@@ -93,7 +100,9 @@ typedef struct PROGMEM{
 }NEXT_STATE;
 
 /////////////////////////////////
+//*****************************//
 //INICIALIZACION DE ESTRUCTURAS//
+//*****************************//
 /////////////////////////////////
 const NEXT_STEP step_map[] PROGMEM={
 	{STEP_ONE,			STEP_TWO},
@@ -148,12 +157,14 @@ const NEXT_STATE smap[] PROGMEM ={
 //};
 
 
-/////////////////////////////////////////
-//Main.c/////////////////////////////////
-/////////////////////////////////////////
+//////////
+//******//
+//Main.c//
+//******//
+//////////
 int main(void){
 	unsigned char state=ST_Idle;//se inicializa la variable state al primer estado
-	unsigned char buffer[],c=0;
+	unsigned char buffer[30],c=0;
 	unsigned char j=0;
 	//unsigned char nextstate;
 	//faltan variables de estado, function test
@@ -162,14 +173,13 @@ int main(void){
 		
 	DDRB=0x00;
 
-	//PORTB=0x00;
-	
-	
+	//Se habilitan las interrupciones
+	sei();
 	while(1){
 		state=nextstate_query(state,signal);
 		switch (state){
 			case ST_Idle:
-				send_usart(1); //Poner interrupcion que cambio el estado a reading
+				send_usart("m"); //Poner interrupcion que cambio el estado a reading
 				break;
 			case ST_Reading:
 				while(c!='\n'){
@@ -179,41 +189,50 @@ int main(void){
 					buffer[j]=c;
 					j++;
 				}
-				state=ST_Moving;//Cambio de estado
+				signal=SIG_NewLine;//Cambio de estado
 				j=0;
 				c=0;
 				break;
 			case ST_Moving:
-				stepper_move(&buffer);
+				stepper_move(buffer);
+				signal=SIG_Complete;
 				break;
 			case ST_Confirm:
+				
 				break;
-		}
+		};
+	};
 }
 
 
-///////////////////////////////////////////
-//OPERACION DE FUNCIONES///////////////////
-///////////////////////////////////////////
+////////////////////////////
+//************************//
+//DECLARACION DE FUNCIONES//
+//************************//
+////////////////////////////
 
 ///////////////////////////////////////////
+//***************************************//
 //FUNCION QUE OBTIENE EL SIGUIENTE ESTADO//
+//***************************************//
 ///////////////////////////////////////////
 unsigned char nextstate_query(unsigned char cur_st, unsigned char signal){
 	unsigned char next_st = cur_st;
 	int i;
-	int max=3; //Es la cantidad de mapeos de estado que se tiene	
+	int max=sizeof(smap); //Es la cantidad de mapeos de estado que se tiene	
 	for(i=0;i<max;i++){
 		if (cur_st==pgm_read_byte(&smap[i].state) && signal==pgm_read_byte(&smap[i].signal)){
 			next_st = pgm_read_byte(&smap[i].nextstate);
 			break;
-		}
-	}
+		};
+	};
 	return next_st; //Si no hay ningun cambio devuelve el estado original
 }
-////////////////////////////////////////////
-//FUNCION QUE INICIALIZA EL USART///////////
-////////////////////////////////////////////
+///////////////////////////////////
+//*******************************//
+//FUNCION QUE INICIALIZA EL USART//
+//*******************************//
+///////////////////////////////////
 void init(unsigned int ubrr){//9600 baudios 8bits, sin paridad, 1 bit de parada
 	
 	UBRRH=(unsigned char)(ubrr>>8);
@@ -225,36 +244,129 @@ void init(unsigned int ubrr){//9600 baudios 8bits, sin paridad, 1 bit de parada
 }
 
 //////////////////////////////////
+//******************************//
 //FUNCION PARA MOVER LOS MOTORES//
+//******************************//
 //////////////////////////////////
-void stepper_move(unsigned char *place[]){//Se le pasa lo que se leyo 
-										//desde el puerto serial
-	unsigned char i=0;
+void stepper_move(unsigned char place[]){//Se le pasa lo que se leyo 
+										  //desde el puerto serial
+	int i=0;
 	unsigned char j=0;
 	unsigned char c=0;
 	unsigned char steps=0;
-	//Aun no se usa lo que se lee del puerto serial
+	//Loop de conversion del string enviado por USART a
+	//el valor de pasos que el motor deb dar. Version 1. 
+	//La conversion no es correcta,
+	//solo es una primera aproximacion debido a que no se tiene
+	//en cuenta el tratamiento de bits y de caracteres ASCII.
 	for (i=0;;i++){
-		c=*place[i];
+		c=place[i];
 		if (c!='\n'){
 			steps=steps*10+c;
 		}else break;
-	}
-	
-	for(j=0;j=steps;j++){
-		PORTB=curr_step;
-
-	}
+	};
+	//Una vez que se tiene un valor de pasos que debe dar el motor
+	//se entra a un Loop que permite controlar la cantidad de pasos
+	//que debe dar el motor de acuerdo a la instruccion
+	//enviada por serial.
+	for(j=0;(j==steps);j++){
+		//Se debe controlar el paso anterior del motor en una variable
+		//global:curr_step.
+		//Esta variable es variada de acuerdo a la estructura
+		//NEXT_STEP declarada al inicio.
+		switch(curr_step){
+			case STEP_ONE:
+				PORTB=0b00001010;
+				break;
+			case STEP_TWO:
+				PORTB=0b00001001;
+				break;
+			case STEP_THREE:
+				PORTB=0b00000101;
+				break;
+			case STEP_FOUR:
+				PORTB=0b00000110;
+				break;
+		};
+		curr_step=nextstep_query(curr_step);//Manejo de pasos para
+											//el motor
+	};
 }
 
 /////////////////////////////////////////////
+//*****************************************//
 //FUNCION PARA ENVIAR UN CARACTER POR USART//
+//*****************************************//
 /////////////////////////////////////////////
-void send_usart(unsigned int data){
-	while ( !( UCSRA & (1<<UDRE)) );
-	UCSRB &= ~(1<<TXB8);
-	if ( data & 0x0100 )
-	UCSRB |= (1<<TXB8);
-	/* Put data into buffer, sends the data */
-	UDR = data;	
+void send_usart(char data[]){
+	int i=0;
+
+	for(i=0;i<sizeof(data);i++){
+		while ( !( UCSRA & (1<<UDRE)) );	
+		/* Put data into buffer, sends the data */
+		UDR = data[i];
+	};	
 }
+
+//////////////////////////////////////////////////
+//**********************************************//
+//FUNCION PARA SABER EL SIGUIENTE PASO DEL MOTOR//
+//**********************************************//
+//////////////////////////////////////////////////
+unsigned char nextstep_query(unsigned char c_step){
+	unsigned char next_step = c_step;
+	int i;
+	int max=sizeof(step_map); //Es la cantidad de mapeos de estado que se tiene	
+	for(i=0;i<max;i++){
+		if (c_step==pgm_read_byte(&step_map[i].step)){
+			next_step = pgm_read_byte(&step_map[i].next_step);
+			break;
+		};
+	};
+	return next_step;
+}
+
+
+///////////////////////////////////////
+//***********************************//
+//RUTINAS DE SERVICIO DE INTERRUPCION//
+//***********************************//
+///////////////////////////////////////
+
+////////////////////////////////////////
+//************************************//
+//INTERRUPCION POR COMUNICACION SERIAL//
+//************************************//
+////////////////////////////////////////
+ISR(USART_RXC_vect){
+	
+}
+
+//****************************************
+//****************************************
+//COMENTARIOS DE VERSION PRELIMINAR*******
+//****************************************
+//Falta controlar la comunicacion serial con la computadora
+//es decir, el envio y recepcion de datos que sera de la sgte manera:
+//
+//ST_Idle->Se espera interrupcion por comunicacion serial
+//		   Cuando llegue un dato por serial, se pasa a la rutina de 
+//		   servicio de interrupcion que debe validar un caracter o 
+//		   string relacionado con el inicio del envio de pasos del 
+//		   motor. 
+//
+//ST_Receive->Se recibe la cantidad de pasos que debe dar el motor
+//			  Cuando la PC termina de enviar el dato debe enviar
+//			  "\n" para indicar el fin del envio
+//
+//ST_Moving->Se procede a mover el motor en una cantidad de pasos
+//			 igual a la especificada por la PC.
+//			 
+//ST_Confirm->Se envia un byte de confirmacion de taladrado a la PC.
+//			  Luego, se espera que la PC envie un byte que indique
+//			  si se seguira taladrando o si se llego al fin del 
+//			  trabajo. Esto indicara si se pasa a ST_Idle o ST_Receive.
+//
+//Rev2. Version preliminar.
+//Por: Mario Egoavil
+//
